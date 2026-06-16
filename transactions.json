@@ -1,0 +1,22 @@
+[
+  { "id": "t001", "date": "2025-04-22", "amount": -8500,  "category": "Food",       "description": "Dominos Pizza", "type": "debit" },
+  { "id": "t002", "date": "2025-04-22", "amount": -3200,  "category": "Transport",  "description": "Uber ride",      "type": "debit" },
+  { "id": "t003", "date": "2025-04-21", "amount": -12000, "category": "Food",       "description": "Shoprite groceries", "type": "debit" },
+  { "id": "t004", "date": "2025-04-21", "amount": -5000,  "category": "Transfers",  "description": "Sent to Emeka",  "type": "debit" },
+  { "id": "t005", "date": "2025-04-20", "amount": -9500,  "category": "Food",       "description": "Restaurant dinner", "type": "debit" },
+  { "id": "t006", "date": "2025-04-20", "amount": -15000, "category": "Transfers",  "description": "Rent contribution", "type": "debit" },
+  { "id": "t007", "date": "2025-04-19", "amount": -4200,  "category": "Transport",  "description": "Bolt rides",     "type": "debit" },
+  { "id": "t008", "date": "2025-04-19", "amount": -6000,  "category": "Food",       "description": "Chicken Republic", "type": "debit" },
+  { "id": "t009", "date": "2025-04-18", "amount": -10000, "category": "Transfers",  "description": "Sent to Mum",   "type": "debit" },
+  { "id": "t010", "date": "2025-04-18", "amount": -7500,  "category": "Misc",       "description": "Amazon purchase","type": "debit" },
+  { "id": "t011", "date": "2025-04-17", "amount": -3500,  "category": "Transport",  "description": "Fuel",           "type": "debit" },
+  { "id": "t012", "date": "2025-04-17", "amount": -5500,  "category": "Misc",       "description": "Airtime & data", "type": "debit" },
+  { "id": "t013", "date": "2025-04-16", "amount": -15000, "category": "Food",       "description": "Weekly groceries","type": "debit" },
+  { "id": "t014", "date": "2025-04-15", "amount": 200000, "category": "Income",     "description": "Salary credit",  "type": "credit" },
+  { "id": "t015", "date": "2025-04-14", "amount": -8000,  "category": "Transfers",  "description": "Sent to sister", "type": "debit" },
+  { "id": "t016", "date": "2025-04-13", "amount": -4500,  "category": "Misc",       "description": "Spotify & Netflix","type": "debit" },
+  { "id": "t017", "date": "2025-04-12", "amount": -6800,  "category": "Food",       "description": "Tastee Fried Chicken","type": "debit" },
+  { "id": "t018", "date": "2025-04-11", "amount": -12000, "category": "Transport",  "description": "Lagos-Ibadan trip","type": "debit" },
+  { "id": "t019", "date": "2025-04-10", "amount": -5000,  "category": "Misc",       "description": "Gym membership", "type": "debit" },
+  { "id": "t020", "date": "2025-04-09", "amount": -9000,  "category": "Food",       "description": "Mr Biggs & drinks","type": "debit" }
+]

@@ -1,0 +1,40 @@
+{
+  "user": {
+    "id": "user_001",
+    "name": "John",
+    "monthlyIncome": 200000,
+    "incomeDay": 15,
+    "walletBalance": 65000,
+    "savingsBalance": 12000
+  },
+  "goals": [
+    {
+      "id": "g001",
+      "name": "Emergency Fund",
+      "target": 200000,
+      "saved": 12000,
+      "deadline": "2025-09-01",
+      "weeklyRequired": 9200
+    },
+    {
+      "id": "g002",
+      "name": "New Laptop",
+      "target": 350000,
+      "saved": 0,
+      "deadline": "2025-08-01",
+      "weeklyRequired": 21875
+    }
+  ],
+  "budgets": {
+    "Food": 30000,
+    "Transport": 20000,
+    "Transfers": 30000,
+    "Misc": 15000
+  },
+  "spendingPatterns": {
+    "avgDailySpend": 12000,
+    "highSpendDays": ["Monday", "Friday", "Saturday"],
+    "earlyMonthSpendRatio": 0.70,
+    "topCategory": "Food"
+  }
+}
