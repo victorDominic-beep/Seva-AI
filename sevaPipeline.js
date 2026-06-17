@@ -1,12 +1,11 @@
 // sevaPipeline.js — Seva AI (Updated with timestamps)
 
-const Groq             = require("groq-sdk");
+const Groq = require("groq-sdk");
 const { retrieve }     = require("./retriever");
 const { buildPrompt }  = require("./promptBuilder");
 const { parseResponse} = require("./responseParser");
 
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
 const SUGGESTED_PROMPTS = [
   { label: "How can I save more money?", intent: "SAVE_MORE"        },
   { label: "Analyze my spending",        intent: "ANALYZE_SPENDING" },
@@ -43,7 +42,7 @@ async function runSevaPipeline(userQuery, userId) {
   // Step 3: Call Groq
   console.log("🤖 Calling Groq...");
   const response = await client.chat.completions.create({
-    model:      "llama-3.3-70b-versatile",
+    model: "llama-3.3-70b-versatile",
     max_tokens: 600,
     messages: [
       { role: "system", content: systemPrompt },
