@@ -42,7 +42,7 @@ async function runSevaPipeline(userQuery, userId) {
   // Step 3: Call Groq
   console.log("🤖 Calling Groq...");
   const response = await client.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     max_tokens: 600,
     messages: [
       { role: "system", content: systemPrompt },
