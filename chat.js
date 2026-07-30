@@ -10,15 +10,95 @@ const { createTicket,
         getActiveTicket,
         closeTicket }                          = require("./ticketService");
 const { notifyAgentsNewTicket }                = require("./emailService");
-const { startPolling,
-        stopPolling,
-        isWithAgent,
-        isPendingHandoff,
-        setHandoffState,
-        routeUserMessageToAgent,
-        cancelHandoff,
-        storeMessage,
-        getConversationHistory }               = require("./agentService");
+const {
+  startPolling,
+  stopPolling,
+  isWithAgent,
+  isPendingHandoff,
+  setHandoffState,
+  routeUserMessageToAgent,
+  cancelHandoff,
+  storeMessage,
+  getConversationHistory,
+  getPendingAgentMessages,
+  clearPendingAgentMessages,
+} = require("./agentService");
+        const { addReply, getReplies } = require("./agentReplyStore");
+
+   async function sendToCRMWebhook(
+  userId,
+  userMessage,
+  sevaResponse,
+  conversationHistory,
+  userName,
+  userEmail,
+  userPhone
+) {
+  const webhookUrl = process.env.CRM_WEBHOOK_URL;
+
+  if (!webhookUrl) {
+    console.warn("[CRM] CRM_WEBHOOK_URL is not configured.");
+    return;
+  }
+
+  const payload = {
+    event: "escalation",
+
+    customer_id: userId,
+
+    customer_name: userName || "User",
+    customer_email: userEmail || "",
+    customer_phone: userPhone || "",
+
+    session_id: userId,
+
+    category: sevaResponse.intent || "General",
+
+    priority: "high",
+
+    ai_confidence: 38,
+
+    subject: `${sevaResponse.intent || "Support"} Request`,
+
+    ai_summary:
+      sevaResponse.insight ||
+      sevaResponse.displayText ||
+      "",
+
+    suggested_queue: "Customer Support",
+
+    platform: "web",
+
+    chat_history: (conversationHistory || []).slice(-10).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    })),
+  };
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.CHATBOT_API_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = await response.text();
+
+    console.log("[CRM] Status:", response.status);
+    console.log("[CRM] Response:", body);
+
+    if (!response.ok) {
+      console.error("[CRM] Webhook rejected.");
+    } else {
+      console.log("[CRM] Webhook sent successfully.");
+    }
+  } catch (err) {
+    console.error("[CRM] Webhook error:", err.message);
+  }
+}
 
 
 // ── POST /api/chat/init ───────────────────────────────────────────
@@ -89,6 +169,15 @@ router.post("/", async (req, res) => {
 
     const query  = isGreeting ? null : message.trim();
     const result = await runSevaPipeline(query, activeUserId, conversationHistory);
+    if (!isGreeting) sendToCRMWebhook(activeUserId,
+       message, 
+       result, 
+       conversationHistory, 
+        result.userName, 
+         result.userEmail,
+             result.userPhone
+
+);
 
     if (result.intent === "HUMAN_AGENT" && result.isHandoff) {
       setHandoffState(activeUserId, "pending");
@@ -158,21 +247,23 @@ router.post("/", async (req, res) => {
 
 router.get("/agent-messages", async (req, res) => {
   const session = await validateSession(req);
+
   if (!session.valid) {
-    return res.status(401).json({ error: "No active session", code: session.error });
+    return res.status(401).json({
+      error: "No active session",
+      code: session.error,
+    });
   }
 
-  const userId  = session.payload.userId;
-  const ticket  = getActiveTicket(userId);
-  const history = getConversationHistory(userId);
-  const agentMessages = history.filter(m => m.role === "agent" || m.role === "system");
+  const userId = session.payload.userId;
+
+  const messages = getPendingAgentMessages(userId);
+
+  clearPendingAgentMessages(userId);
 
   res.json({
-    success:       true,
-    isWithAgent:   isWithAgent(userId),
-    isPending:     isPendingHandoff(userId),
-    ticketId:      ticket?.ticketId || null,
-    agentMessages,
+    success: true,
+    messages,
   });
 });
 
@@ -235,6 +326,32 @@ router.get("/demo", async (req, res) => {
   }
 
   res.json({ success: true, demo: results });
+});
+// ── POST /api/chat/agent-reply ─────────────────────────────────────
+// Called by the CRM whenever an agent sends a message
+
+// ── POST /api/chat/agent-reply ───────────────────────────────
+// CRM calls this whenever an agent replies
+
+router.post("/agent-reply", (req, res) => {
+  const { userId, agentName, message, timestamp } = req.body;
+
+  if (!userId || !message) {
+    return res.status(400).json({
+      success: false,
+      error: "userId and message are required",
+    });
+  }
+
+  storeMessage(userId, "agent", message);
+
+  console.log(
+    `[CRM] Agent reply received for ${userId}: ${message}`
+  );
+
+  res.json({
+    success: true,
+  });
 });
 
 

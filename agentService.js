@@ -11,6 +11,8 @@ const activePolls = new Map();
 
 // Conversation history store — key: userId, value: array of messages
 const conversationStore = new Map();
+// New agent messages waiting for the frontend
+const pendingAgentMessages = new Map();
 
 // Handoff state — key: userId, value: "seva" | "agent" | "pending"
 const handoffState = new Map();
@@ -25,11 +27,24 @@ function storeMessage(userId, role, content) {
   if (!conversationStore.has(userId)) {
     conversationStore.set(userId, []);
   }
+
   conversationStore.get(userId).push({
     role,
     content,
     timestamp: new Date().toISOString(),
   });
+
+  if (role === "agent") {
+    if (!pendingAgentMessages.has(userId)) {
+      pendingAgentMessages.set(userId, []);
+    }
+
+    pendingAgentMessages.get(userId).push({
+      role,
+      content,
+      timestamp: new Date().toISOString(),
+    });
+  }
 }
 
 
@@ -192,11 +207,19 @@ async function cancelHandoff(userId) {
   await closeTicket(userId);
   console.log(`[Agent] Handoff cancelled for user: ${userId}`);
 }
+function getPendingAgentMessages(userId) {
+  return pendingAgentMessages.get(userId) || [];
+}
 
+function clearPendingAgentMessages(userId) {
+  pendingAgentMessages.delete(userId);
+}
 
 module.exports = {
   storeMessage,
   getConversationHistory,
+  getPendingAgentMessages,
+  clearPendingAgentMessages,
   isWithAgent,
   isPendingHandoff,
   setHandoffState,

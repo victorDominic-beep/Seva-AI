@@ -222,6 +222,19 @@ async function checkScopeAndPDF(query) {
 async function retrieve(query, userId, filter, startDate, endDate) {
   const { profile, transactions } = await fetchUserData(userId, filter, startDate, endDate);
   
+      const intent = detectIntent(query);
+
+if (intent === "HUMAN_AGENT") {
+    console.log("🙋 Human agent requested");
+
+    const result = getHumanAgentContext(profile);
+    result.userName = profile.user.name;
+    result.userEmail = profile.user.email || "";
+result.userPhone = profile.user.phone || "";
+
+    return result;
+}
+
   // Always search PDF first
   console.log(`📄 Searching PDF for: "${query}"`);
   const pdfSearchResults = searchPDFs(query, 3);
@@ -237,7 +250,6 @@ async function retrieve(query, userId, filter, startDate, endDate) {
   
   // Otherwise, use normal financial AI
   console.log(`❌ No PDF match, using financial AI`);
-  const intent = detectIntent(query);
   let result;
 
   switch (intent) {

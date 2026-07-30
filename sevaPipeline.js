@@ -61,6 +61,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     return {
       query:            userQuery,
       intent:           "HUMAN_AGENT",
+      userName:         context.userName,
       isGreeting:       false,
       isHandoff:        true,
       insight:          `I understand you'd like to speak with a human agent, ${context.userName}. Let me connect you right away.`,
@@ -79,6 +80,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     return {
       query:            userQuery,
       intent:           "OUT_OF_SCOPE",
+      userName:         context.userName,
       isGreeting:       false,
       isHandoff:        false,
       insight:          "I'm sorry, that question is outside my scope as a financial AI.",
@@ -122,6 +124,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     return {
       query:            userQuery,
       intent:           "PDF_FALLBACK",
+      userName:         context.userName,
       isGreeting:       false,
       isHandoff:        false,
       isPDFFallback:    true,
@@ -177,6 +180,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
   return {
     query:            userQuery,
     intent:           context.intent,
+    userName:         context.userName,
     isGreeting,
     isHandoff:        false,
     insight:          parsed.insight,
