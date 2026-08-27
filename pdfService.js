@@ -123,12 +123,17 @@ function searchPDFs(query, maxResults = 3) {
 
   let queryTerms = query
     .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/)
     .filter(t => t.length > 2 && !stopWords.has(t));
 
   // If all words were filtered out, use all non-tiny words
   if (queryTerms.length === 0) {
-    queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+    queryTerms = query
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 2);
   }
 
   console.log(`   [PDF Search] Terms: [${queryTerms.join(", ")}]`);
@@ -138,7 +143,7 @@ function searchPDFs(query, maxResults = 3) {
   // Search all indexed PDFs
   pdfIndex.forEach((pdfData, pdfName) => {
     pdfData.chunks.forEach((chunk, chunkIndex) => {
-      const chunkLower = chunk.content.toLowerCase();
+      const chunkLower = chunk.content.toLowerCase().replace(/[^a-z0-9]+/g, " ");
       let relevanceScore = 0;
 
       // Calculate relevance based on query term matches

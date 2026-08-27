@@ -21,6 +21,12 @@ function formatNaira(amount) {
   return `NGN${Math.abs(amount).toLocaleString("en-NG")}`;
 }
 
+function fromKobo(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue / 100 : 0;
+}
+
 function daysAgo(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
@@ -94,7 +100,11 @@ async function fetchUserDataDirectly(
 // ── Get user data ─────────────────────────────────────────────────
 
 async function fetchUserData(userId, filter, startDate, endDate) {
-  const isDemoMode = !userId || userId === "demo";
+  const isDemoMode = userId === "demo";
+
+  if (!userId) {
+    throw new Error("MISSING_USER_ID: userId is required for live data");
+  }
 
   if (isDemoMode) {
     console.log("   [DEMO MODE] Loading local JSON data...");
@@ -121,29 +131,56 @@ function mapUserData(data) {
   const mappedProfile = {
     user: {
       id: d.user?.id || "",
-      name: d.user?.fullName || d.user?.name || "User",
-      monthlyIncome: d.summary?.income || 0,
+      name:
+        d.user?.fullName ||
+        d.user?.full_name ||
+        d.user?.name ||
+        d.profile?.fullName ||
+        d.profile?.full_name ||
+        d.profile?.name ||
+        d.userName ||
+        "User",
+      monthlyIncome: fromKobo(d.summary?.income),
       incomeDay: d.user?.incomeDay || 1,
-      walletBalance: d.summary?.balance || 0,
-      savingsBalance: d.summary?.potsBalance || 0,
+      walletBalance: fromKobo(d.summary?.balance),
+      savingsBalance: fromKobo(d.summary?.potsBalance),
     },
-    budgets: d.budgets || [],
-    spendingPatterns: d.spendingPatterns || {},
-    goals: d.user?.goals || [],
+    budgets: Object.fromEntries(
+      Object.entries(d.budgets || {}).map(([category, amount]) => [
+        category,
+        fromKobo(amount),
+      ])
+    ),
+    spendingPatterns: {
+      ...(d.spendingPatterns || {}),
+      ...(d.spendingPatterns?.avgDailySpend !== undefined
+        ? { avgDailySpend: fromKobo(d.spendingPatterns.avgDailySpend) }
+        : {}),
+    },
+    goals: (d.user?.goals || []).map(goal => ({
+      ...goal,
+      target: fromKobo(goal.target),
+      saved: fromKobo(goal.saved),
+      weeklyRequired: fromKobo(goal.weeklyRequired),
+    })),
   };
 
   const expenses = d.recentTransactions?.expense || [];
   const incomes = d.recentTransactions?.income || [];
   const allTx = [...expenses, ...incomes];
 
-  const mappedTransactions = allTx.map(t => ({
-    id: t.id,
-    date: t.date || t.createdAt || "",
-    amount: t.amount,
-    category: t.category || t.budgetName || "General",
-    description: t.description || t.narration || "",
-    type: t.type || (t.amount < 0 ? "debit" : "credit"),
-  }));
+  const mappedTransactions = allTx.map(t => {
+    const amount = fromKobo(t.amount);
+
+    return {
+      id: t.id,
+      date: t.date || t.createdAt || "",
+      amount,
+      category: t.category || t.budgetName || "General",
+      description: t.description || t.narration || "",
+      type: t.type || (amount < 0 ? "debit" : "credit"),
+    };
+  });
 
   return { profile: mappedProfile, transactions: mappedTransactions };
 }
