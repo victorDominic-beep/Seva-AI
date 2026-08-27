@@ -14,7 +14,6 @@ let cachedTokenExp = null;
 // Dev's function: createJwtToken(payload) => jwt.sign(payload, SECRET, { expiresIn:"1d", algorithm:"HS256", audience:"SEVAAI" })
 // We call it with: { role: "seva", userId: SEVA_ID }
 function createJwtToken(payload) {
-  console.log(SECRET);
   const token = jwt.sign(payload, SECRET, {
     expiresIn: "1d",
     algorithm: "HS256",

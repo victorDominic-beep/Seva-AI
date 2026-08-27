@@ -1,181 +1,246 @@
 // initService.js — Seva AI v1.0
 // -------------------------------------------------------------------
-// Handles the initialization flow when user opens the chat panel
-// Spec section 3: triggered on chat panel open, not on login
+// Handles initialization when user opens the chat panel
 //
 // Flow:
-//   1. Receive userId from frontend
-//   2. Generate JWT
-//   3. Fire-and-forget request to backend
-//   4. Poll Redis for user data
-//   5. Analyze user data
-//   6. Generate session (UUID-based)
-//   7. Set HTTP-only cookie
-//   8. Signal ready to frontend
+//   1. Receive userId
+//   2. Fetch user data directly from backend
+//   3. Generate session
+//   4. Store session in Redis
+//   5. Set HTTP-only cookie
+//   6. Signal ready to frontend
 // -------------------------------------------------------------------
 
-const { getValidJwtToken, createSessionToken } = require("./jwtService");
-const { pollRedisForUserData,
-        storeSession,
-        refreshSessionTTL }                    = require("./redisService");
-const { v4: uuidv4 }                           = require("uuid");
+const { createSessionToken } = require("./jwtService");
+const { fetchUserData } = require("./retriever");
+const {
+  storeSession,
+  getSession,
+  refreshSessionTTL,
+} = require("./redisService");
 
-
-// In-memory session store (fallback if Redis not available for sessions)
-// For production — use Redis via storeSession()
+// In-memory session store
 const activeSessions = new Map();
 
-// Message queue — stores messages sent before session is ready
-// Key: userId, Value: array of messages
+// Message queue
 const messageQueues = new Map();
 
 
-// ── Initialize a Seva session for a user ─────────────────────────
-// Called when user opens the chat panel
+// ── Initialize a Seva session ─────────────────────────────────────
 async function initializeSession(userId, res) {
   console.log(`\n[Init] Starting initialization for user: ${userId}`);
 
   try {
-    // Step 1: Trigger backend data fetch (fire-and-forget)
-    const { triggerBackendDataFetch } = require("./retriever");
+    // Step 1: Fetch user data directly from backend
+    const userData = await fetchUserData(userId);
 
-    // DEMO MODE — skip fire-and-forget if demo user
-    if (userId !== "demo") {
-      await triggerBackendDataFetch(userId);
-    }
+    // Step 2: Generate session
+    const {
+      token: sessionToken,
+      sessionId,
+    } = createSessionToken(
+      userId,
+      userData.profile?.user || {}
+    );
 
-    // Step 2: Poll Redis for user data
-    let userData;
-    if (userId === "demo") {
-      // Demo mode — use local JSON
-      const fs   = require("fs");
-      const path = require("path");
-      const profile      = JSON.parse(fs.readFileSync(path.join(__dirname, "user-profile.json"), "utf-8"));
-      const transactions = JSON.parse(fs.readFileSync(path.join(__dirname, "transactions.json"), "utf-8"));
-      userData = { ...profile, transactions };
-    } else {
-      userData = await pollRedisForUserData(userId);
-    }
-
-    // Step 3: Generate session
-    const { token: sessionToken, sessionId } = createSessionToken(userId, userData.user || {});
-
-    // Step 4: Store session server-side
+    // Step 3: Store session server-side
     const sessionData = {
       sessionId,
       userId,
-      createdAt:  Date.now(),
+      createdAt: Date.now(),
       dataFetched: true,
     };
 
     await storeSession(sessionId, sessionData);
     activeSessions.set(sessionId, sessionData);
 
-    // Step 5: Set HTTP-only cookie (spec section 7.2)
-    const cookieName    = process.env.SESSION_COOKIE_NAME || "seva_session";
-    const sessionTTLMs  = (parseInt(process.env.SESSION_TTL_HOURS) || 2) * 60 * 60 * 1000;
+    // Step 4: Set HTTP-only cookie
+    const cookieName =
+      process.env.SESSION_COOKIE_NAME || "seva_session";
+
+    const sessionTTLMs =
+      (parseInt(process.env.SESSION_TTL_HOURS) || 2) *
+      60 *
+      60 *
+      1000;
 
     res.cookie(cookieName, sessionToken, {
-      httpOnly: true,                                    // not accessible via JS — XSS protection
-      secure:   process.env.NODE_ENV === "production",   // HTTPS only in production
-      sameSite: process.env.COOKIE_SAMESITE || "Strict", // ← PLUG IN: confirm with frontend team
-      maxAge:   sessionTTLMs,
+      httpOnly: true,
+      secure:
+        process.env.NODE_ENV === "production",
+      sameSite:
+        process.env.COOKIE_SAMESITE || "Strict",
+      maxAge: sessionTTLMs,
     });
 
-    console.log(`[Init] Session created: ${sessionId} for user: ${userId}`);
+    console.log(
+      `[Init] Session created: ${sessionId} for user: ${userId}`
+    );
 
-    // Step 6: Process any queued messages
-    const queued = messageQueues.get(userId) || [];
+    // Step 5: Process queued messages
+    const queued =
+      messageQueues.get(userId) || [];
+
     messageQueues.delete(userId);
 
     return {
-      success:        true,
-      sessionReady:   true,
+      success: true,
+      sessionReady: true,
       sessionId,
       queuedMessages: queued,
-      userName:       userData.user?.name || "User",
+      userName:
+        userData.profile?.user?.name || "User",
     };
 
   } catch (err) {
-    console.error(`[Init] Initialization failed for user ${userId}:`, err.message);
+    console.error(
+      `[Init] Initialization failed for user ${userId}:`,
+      err.message
+    );
 
     if (err.message.includes("USER_NOT_FOUND")) {
-      return { success: false, error: "USER_NOT_FOUND", message: "Could not load your profile. Please try again." };
-    }
-    if (err.message.includes("AUTH_FAILED")) {
-      return { success: false, error: "AUTH_FAILED",    message: "Authentication failed. Please log in again." };
-    }
-    if (err.message.includes("REDIS_TIMEOUT")) {
-      return { success: false, error: "REDIS_TIMEOUT",  message: "Service is taking too long. Please try reopening the chat." };
+      return {
+        success: false,
+        error: "USER_NOT_FOUND",
+        message:
+          "Could not load your profile. Please try again.",
+      };
     }
 
-    return { success: false, error: "INIT_FAILED", message: "AI service unavailable. Please try again." };
+    if (err.message.includes("AUTH_FAILED")) {
+      return {
+        success: false,
+        error: "AUTH_FAILED",
+        message:
+          "Authentication failed. Please log in again.",
+      };
+    }
+
+    return {
+      success: false,
+      error: "INIT_FAILED",
+      message:
+        "AI service unavailable. Please try again.",
+    };
   }
 }
 
 
 // ── Queue a message sent before session is ready ──────────────────
-// Spec section 3.2 — FIFO ordering required
 function queueMessage(userId, message) {
   if (!messageQueues.has(userId)) {
     messageQueues.set(userId, []);
   }
+
   messageQueues.get(userId).push({
     message,
     queuedAt: Date.now(),
   });
-  console.log(`[Queue] Message queued for user ${userId} — queue size: ${messageQueues.get(userId).length}`);
+
+  console.log(
+    `[Queue] Message queued for user ${userId} — queue size: ${messageQueues.get(userId).length}`
+  );
 }
 
 
-// ── Validate a session from the HTTP-only cookie ──────────────────
+// ── Validate session ──────────────────────────────────────────────
 async function validateSession(req) {
-  const cookieName = process.env.SESSION_COOKIE_NAME || "seva_session";
-  const cookie     = req.cookies?.[cookieName];
+  const cookieName =
+    process.env.SESSION_COOKIE_NAME || "seva_session";
+
+  const cookie =
+    req.cookies?.[cookieName];
 
   if (!cookie) {
-    return { valid: false, error: "NO_SESSION_COOKIE" };
+    return {
+      valid: false,
+      error: "NO_SESSION_COOKIE",
+    };
   }
 
-  const { verifySessionToken } = require("./jwtService");
-  const result = verifySessionToken(cookie);
+  const { verifySessionToken } =
+    require("./jwtService");
+
+  const result =
+    verifySessionToken(cookie);
 
   if (!result.valid) {
-    return { valid: false, error: "SESSION_EXPIRED" };
+    return {
+      valid: false,
+      error: "SESSION_EXPIRED",
+    };
   }
 
-  // Slide session TTL on active request (spec section 7.3)
-  const { sessionId } = result.payload;
-  await refreshSessionTTL(sessionId).catch(() => {}); // non-blocking
+  const { sessionId } =
+    result.payload;
 
-  return { valid: true, payload: result.payload };
+  const storedSession =
+    await getSession(sessionId).catch(() => null);
+
+  if (!storedSession) {
+    return {
+      valid: false,
+      error: "SESSION_NOT_FOUND",
+    };
+  }
+
+  await refreshSessionTTL(
+    sessionId
+  ).catch(() => {});
+
+  return {
+    valid: true,
+    payload: result.payload,
+  };
 }
 
 
 // ── Invalidate session on logout ──────────────────────────────────
 async function invalidateSession(req, res) {
-  const cookieName = process.env.SESSION_COOKIE_NAME || "seva_session";
-  const cookie     = req.cookies?.[cookieName];
+  const cookieName =
+    process.env.SESSION_COOKIE_NAME || "seva_session";
+
+  const cookie =
+    req.cookies?.[cookieName];
 
   if (cookie) {
-    const { verifySessionToken } = require("./jwtService");
-    const result = verifySessionToken(cookie);
+    const {
+      verifySessionToken,
+    } = require("./jwtService");
+
+    const result =
+      verifySessionToken(cookie);
+
     if (result.valid) {
-      const { deleteSession } = require("./redisService");
-      await deleteSession(result.payload.sessionId).catch(() => {});
-      activeSessions.delete(result.payload.sessionId);
+      const {
+        deleteSession,
+      } = require("./redisService");
+
+      await deleteSession(
+        result.payload.sessionId
+      ).catch(() => {});
+
+      activeSessions.delete(
+        result.payload.sessionId
+      );
     }
   }
 
-  // Clear the cookie
   res.clearCookie(cookieName, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: process.env.COOKIE_SAMESITE || "Strict",
+    secure:
+      process.env.NODE_ENV === "production",
+    sameSite:
+      process.env.COOKIE_SAMESITE || "Strict",
   });
 
-  console.log(`[Session] Logged out and session invalidated`);
-  return { success: true };
+  console.log(
+    `[Session] Logged out and session invalidated`
+  );
+
+  return {
+    success: true,
+  };
 }
 
 
