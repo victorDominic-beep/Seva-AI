@@ -153,7 +153,7 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "message is required", code: "MISSING_MESSAGE" });
   }
 
-  const activeUserId = userId || session.payload.userId;
+  const activeUserId = session.payload.userId;
 
   try {
 
@@ -292,7 +292,9 @@ router.post("/logout", async (req, res) => {
 
 router.get("/greeting", async (req, res) => {
   try {
-    const result = await runSevaPipeline(null, "demo", []);
+    const session = await validateSession(req);
+    const greetingUserId = session.valid ? session.payload.userId : "demo";
+    const result = await runSevaPipeline(null, greetingUserId, []);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
