@@ -26,16 +26,27 @@ function extractSections(cleanText) {
   return sections;
 }
 
+function formatForDisplay(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>")
+    .replace(/\r?\n/g, "<br>");
+}
+
 function parseResponse(rawLLMResponse, pdfSources = null) {
   const cleanText = rawLLMResponse.trim();
   const sections   = extractSections(cleanText);
 
   return {
     raw: rawLLMResponse,
-    insight: sections.insight,
-    meaning: sections.meaning,
-    action:  sections.action,
-    displayText: cleanText
+    insight: formatForDisplay(sections.insight),
+    meaning: formatForDisplay(sections.meaning),
+    action:  formatForDisplay(sections.action),
+    displayText: formatForDisplay(cleanText)
   };
 }
 
