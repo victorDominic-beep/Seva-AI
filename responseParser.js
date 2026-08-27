@@ -28,13 +28,8 @@ function extractSections(cleanText) {
 
 function formatForDisplay(text) {
   return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-    .replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>")
-    .replace(/\r?\n/g, "<br>");
+    .replace(/\*\*(.+?)\*\*/gs, "$1")
+    .replace(/__(.+?)__/gs, "$1");
 }
 
 function parseResponse(rawLLMResponse, pdfSources = null) {
