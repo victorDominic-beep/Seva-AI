@@ -110,7 +110,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     console.log("🤖 Calling Groq with PDF fallback context...");
     const response = await client.chat.completions.create({
       model:       "openai/gpt-oss-120b",
-      max_tokens:  600,
+      max_tokens:  900,
       temperature: 0.7,
       messages,
     });
@@ -159,7 +159,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
   console.log("🤖 Calling Groq with conversation history...");
   const response = await client.chat.completions.create({
     model:       "openai/gpt-oss-120b",
-    max_tokens:  600,
+    max_tokens:  900,
     temperature: 0.7,
     messages,
   });
