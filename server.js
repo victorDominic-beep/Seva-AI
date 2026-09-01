@@ -2,6 +2,7 @@
 require("dotenv").config();
 
 const express    = require("express");
+const rateLimit  = require("express-rate-limit");
 const cors       = require("cors");
 const cookieParser = require("cookie-parser");
 const chatRoutes = require("./chat");
@@ -17,6 +18,14 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser()); // needed to read HTTP-only cookies
+
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  keyGenerator: (req) => req.body?.userId || req.ip,
+  message: { error: "Too many requests. Please slow down.", code: "RATE_LIMITED" }
+});
+app.use("/api/chat", chatLimiter);
 
 app.use("/api/chat", chatRoutes);
 
