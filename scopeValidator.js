@@ -50,7 +50,9 @@ const STRONG_OUT_OF_SCOPE_PHRASES = [
 const GREETING_PHRASES = [
   "hi", "hello", "hey", "how are you", "what's up", "greetings",
   "good morning", "good afternoon", "good evening", "good night",
-  "sup", "yo", "howdy", "hiya",
+  "sup", "yo", "howdy", "hiya", "thanks", "thank you", "okay", "ok",
+  "yes", "no", "sure", "alright", "great", "cool", "tell me more",
+  "go on", "continue", "and then", "what else","hi ,good morning", "hi ,good afternoon", "hi ,good evening", "hi ,good night",
 ];
 
 const HUMAN_AGENT_PHRASES = [
@@ -122,6 +124,9 @@ function isWithinScope(query, intentOrThreshold = null, threshold = 2) {
 
   if (matchedPhrases(query, HUMAN_AGENT_PHRASES).length > 0) return true;
   if (matchedPhrases(query, GREETING_PHRASES).length > 0) return true;
+
+  // Any short conversational message should not be forced into OUT_OF_SCOPE.
+  if (getTokens(query).length < 4) return true;
 
   return getFinancialRelevanceScore(query, intent) >= requiredScore;
 }

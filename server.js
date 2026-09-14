@@ -1,8 +1,7 @@
 // server.js — Seva AI v1.0 (With PDF Service)
 require("dotenv").config();
-
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const express    = require("express");
-const rateLimit  = require("express-rate-limit");
 const cors       = require("cors");
 const cookieParser = require("cookie-parser");
 const chatRoutes = require("./chat");
@@ -22,7 +21,7 @@ app.use(cookieParser()); // needed to read HTTP-only cookies
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
-  keyGenerator: (req) => req.body?.userId || req.ip,
+  keyGenerator: (req) => req.body?.userId || ipKeyGenerator(req),
   message: { error: "Too many requests. Please slow down.", code: "RATE_LIMITED" }
 });
 app.use("/api/chat", chatLimiter);

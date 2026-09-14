@@ -22,7 +22,6 @@ function formatNaira(amount) {
 }
 
 function fromKobo(value) {
-  if (value === null || value === undefined || value === "") return 0;
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue / 100 : 0;
 }
@@ -126,7 +125,7 @@ async function fetchUserData(userId, filter, startDate, endDate) {
 }
 
 function mapUserData(data) {
-  const d = data.data || data;
+  const d = data?.data?.data || data?.data || data;
 
   const mappedProfile = {
     user: {
@@ -140,17 +139,37 @@ function mapUserData(data) {
         d.profile?.name ||
         d.userName ||
         "User",
+      email: d.user?.email || "",
+      phone: d.user?.phone || "",
+      gender: d.user?.gender || "",
       monthlyIncome: fromKobo(d.summary?.income),
       incomeDay: d.user?.incomeDay || 1,
       walletBalance: fromKobo(d.summary?.balance),
       savingsBalance: fromKobo(d.summary?.potsBalance),
     },
-    budgets: Object.fromEntries(
-      Object.entries(d.budgets || {}).map(([category, amount]) => [
-        category,
-        fromKobo(amount),
-      ])
-    ),
+    budgetSummary: {
+      totalBudget: d.summary?.totalBudget || 0,
+      budgetSpent: d.summary?.budgetSpent || 0,
+      budgetBalance: d.summary?.budgetBalance || 0,
+      totalExpense: d.summary?.expense || 0,
+    },
+    budgets: Array.isArray(d.budgets)
+      ? d.budgets.map(b => ({
+          name: b.budgetName,
+          amount: b.amount,
+          budgetBalance: b.budgetBalance,
+          totalWithdrawal: b.totalWithdrawal,
+          isActive: b.isActive,
+          duration: b.duration,
+        }))
+      : [],
+    pots: Array.isArray(d.pots)
+      ? d.pots.map(p => ({
+          name: p.name,
+          balance: p.balance,
+          initialAmount: p.initialAmount,
+        }))
+      : [],
     spendingPatterns: {
       ...(d.spendingPatterns || {}),
       ...(d.spendingPatterns?.avgDailySpend !== undefined
@@ -165,8 +184,14 @@ function mapUserData(data) {
     })),
   };
 
-  const expenses = d.recentTransactions?.expense || [];
-  const incomes = d.recentTransactions?.income || [];
+  const expenses = (d.recentTransactions?.expense || []).map(t => ({
+    ...t,
+    _type: "debit",
+  }));
+  const incomes = (d.recentTransactions?.income || []).map(t => ({
+    ...t,
+    _type: "credit",
+  }));
   const allTx = [...expenses, ...incomes];
 
   const mappedTransactions = allTx.map(t => {
@@ -174,11 +199,12 @@ function mapUserData(data) {
 
     return {
       id: t.id,
-      date: t.date || t.createdAt || "",
+      date: t.createdAt || t.date || "",
+      createdAt: t.createdAt || t.date || "",
       amount,
-      category: t.category || t.budgetName || "General",
-      description: t.description || t.narration || "",
-      type: t.type || (amount < 0 ? "debit" : "credit"),
+      category: t.transactionType || t.category || "General",
+      description: t.transactionType || t.description || "",
+      type: t._type,
     };
   });
 
@@ -189,7 +215,12 @@ function mapUserData(data) {
 
 function detectIntent(query) {
   if (!query) return "GREETING";
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
+
+  // Detect greetings first — before anything else
+  if (q.match(/^(hi|hello|hey|good morning|good afternoon|good evening|good day|howdy|how are you|what's up|whats up|morning|afternoon|evening|greetings|yo|sup|hiya|thanks|thank you|okay|ok|yes|no|sure|alright|great|cool|tell me more|go on|continue|and then|what else)[\s\W]*$/)) {
+    return "GREETING";
+  }
 
   if (q.match(/human|agent|real person|speak to someone|talk to someone|talk to a person|customer service|support agent|live agent|representative/))
     return "HUMAN_AGENT";
@@ -230,9 +261,14 @@ function getSaveMoreContext(profile) {
     ? Math.round((u.savingsBalance / u.monthlyIncome) * 100)
     : 0;
 
+  const potsTotal = (profile.pots || []).reduce((sum, p) => sum + p.balance, 0);
+  const potsList = (profile.pots || [])
+    .map(p => `${p.name}: NGN${p.balance.toLocaleString("en-NG")}`)
+    .join(", ");
+
   return {
     intent: "SAVE_MORE",
-    context: `USER: ${u.name}. INTENT: SAVE_MORE. Monthly income: ${formatNaira(u.monthlyIncome)}. Current savings: ${formatNaira(u.savingsBalance)}. Savings rate: ${rate}% of income. Target: ${formatNaira(profile.goals?.[0]?.target || 200000)}. Wallet balance: ${formatNaira(u.walletBalance)}. Income day: ${u.incomeDay}th.`,
+    context: `USER: ${u.name}. INTENT: SAVE_MORE. Monthly income: ${formatNaira(u.monthlyIncome)}. Current savings: ${formatNaira(u.savingsBalance)}. Savings rate: ${rate}% of income. Target: ${formatNaira(profile.goals?.[0]?.target || 200000)}. Wallet balance: ${formatNaira(u.walletBalance)}. Income day: ${u.incomeDay}th. Savings pots: ${potsList || "none"}. Total in pots: NGN${potsTotal.toLocaleString("en-NG")}.`,
   };
 }
 
@@ -240,7 +276,7 @@ function getAnalyzeContext(transactions, profile) {
   const u = profile.user;
 
   const last10 = transactions.filter(
-    t => daysAgo(t.date) <= 10 && (t.type === "debit" || t.amount < 0)
+    t => daysAgo(t.createdAt || t.date) <= 10 && (t.type === "debit" || t.amount < 0)
   );
 
   const byCat = {};
@@ -255,16 +291,27 @@ function getAnalyzeContext(transactions, profile) {
   const top =
     Object.entries(byCat).sort((a, b) => b[1] - a[1])[0] || ["None", 0];
 
-  const foodOver =
-    (byCat["Food"] || 0) > (profile.budgets?.Food || 30000);
+  const budgetEntries = Array.isArray(profile.budgets)
+    ? profile.budgets.map(b => [b.name, b.amount])
+    : Object.entries(profile.budgets || {});
+
+  const budgetComparison = budgetEntries.map(([category, limit]) => {
+    const spent = byCat[category] || 0;
+    const isOver = spent > limit;
+    return `${category}: ${isOver ? "OVER" : "within"} budget (${formatNaira(spent)} spent vs ${formatNaira(limit)} limit)`;
+  });
 
   const breakdown = Object.entries(byCat)
     .map(([c, a]) => `${c}: ${formatNaira(a)} (${Math.round((a / total) * 100)}%)`)
     .join(", ");
 
+  const budgetSpent = profile.budgetSummary?.budgetSpent || 0;
+  const budgetBalance = profile.budgetSummary?.budgetBalance || 0;
+  const totalBudget = profile.budgetSummary?.totalBudget || 0;
+
   return {
     intent: "ANALYZE_SPENDING",
-    context: `USER: ${u.name}. INTENT: ANALYZE_SPENDING. Total spent last 10 days: ${formatNaira(total)}. Breakdown: ${breakdown}. Top: ${top[0]} at ${formatNaira(top[1])}. Food over budget: ${foodOver ? "YES" : "No"}.`,
+    context: `USER: ${u.name}. INTENT: ANALYZE_SPENDING. Total spent last 10 days: ${formatNaira(total)}. Breakdown: ${breakdown}. Top: ${top[0]} at ${formatNaira(top[1])}. Budget comparison: ${budgetComparison.join("; ")}. Total budget: ${formatNaira(totalBudget)}, Total spent across budgets: ${formatNaira(budgetSpent)}, Remaining budget balance: ${formatNaira(budgetBalance)}.`,
   };
 }
 
@@ -274,13 +321,19 @@ function getBudgetContext(profile) {
   const bills = 60000;
   const savings = Math.round(income * 0.25);
 
-  const lines = Object.entries(profile.budgets || {})
-    .map(([c, a]) => `${c}: ${formatNaira(a)}`)
-    .join(", ");
+  const budgetLines = Array.isArray(profile.budgets)
+    ? profile.budgets
+        .map(b => `${b.name}: spent NGN${(b.totalWithdrawal || 0).toLocaleString("en-NG")} of NGN${(b.amount || 0).toLocaleString("en-NG")} (balance: NGN${(b.budgetBalance || 0).toLocaleString("en-NG")})`)
+        .join(", ")
+    : "none set";
+
+  const totalBudget = profile.budgetSummary?.totalBudget || 0;
+  const budgetSpent = profile.budgetSummary?.budgetSpent || 0;
+  const budgetBalance = profile.budgetSummary?.budgetBalance || 0;
 
   return {
     intent: "BUDGET_PLAN",
-    context: `USER: ${u.name}. INTENT: BUDGET_PLAN. Monthly income: ${formatNaira(income)}. Bills: ${formatNaira(bills)}. Savings (25%): ${formatNaira(savings)}. Flexible: ${formatNaira(income - bills - savings)}. Budgets: ${lines || "none set"}. Balance: ${formatNaira(u.walletBalance)}.`,
+    context: `USER: ${u.name}. INTENT: BUDGET_PLAN. Monthly income: ${formatNaira(income)}. Bills: ${formatNaira(bills)}. Savings (25%): ${formatNaira(savings)}. Flexible: ${formatNaira(income - bills - savings)}. Budgets: ${budgetLines || "none set"}. Total budget: ${formatNaira(totalBudget)}, Total spent across budgets: ${formatNaira(budgetSpent)}, Remaining budget balance: ${formatNaira(budgetBalance)}. Balance: ${formatNaira(u.walletBalance)}.`,
   };
 }
 
@@ -382,9 +435,49 @@ async function retrieve(query, userId, filter, startDate, endDate) {
 
     const result = getHumanAgentContext(profile);
 
+    result.profile = profile;
     result.userName = profile.user.name;
     result.userEmail = profile.user.email || "";
     result.userPhone = profile.user.phone || "";
+
+    return result;
+  }
+
+  if (intent === "GREETING") {
+    const result = getGreetingContext(profile);
+    result.userName = profile.user.name;
+    result.intent = "GREETING";
+    return result;
+  }
+
+  if (["SAVE_MORE", "ANALYZE_SPENDING", "BUDGET_PLAN", "INVESTMENT_TIPS"].includes(intent)) {
+    let result;
+
+    switch (intent) {
+      case "GREETING":
+        result = getGreetingContext(profile);
+        break;
+
+      case "SAVE_MORE":
+        result = getSaveMoreContext(profile);
+        break;
+
+      case "ANALYZE_SPENDING":
+        result = getAnalyzeContext(transactions, profile);
+        break;
+
+      case "BUDGET_PLAN":
+        result = getBudgetContext(profile);
+        break;
+
+      case "INVESTMENT_TIPS":
+        result = getInvestmentContext(profile);
+        break;
+    }
+
+    result.profile = profile;
+    result.userName = profile.user.name;
+    result.intent = intent;
 
     return result;
   }
@@ -398,6 +491,7 @@ async function retrieve(query, userId, filter, startDate, endDate) {
       profile
     );
 
+    result.profile = profile;
     result.userName = profile.user.name;
 
     return result;
@@ -405,46 +499,13 @@ async function retrieve(query, userId, filter, startDate, endDate) {
 
   if (!scopeResult.inScope) {
     const result = getOutOfScopeContext(profile);
+    result.profile = profile;
     result.userName = profile.user.name;
 
     return result;
   }
-  let result;
 
-  switch (intent) {
-    case "GREETING":
-      result = getGreetingContext(profile);
-      break;
-
-    case "SAVE_MORE":
-      result = getSaveMoreContext(profile);
-      break;
-
-    case "ANALYZE_SPENDING":
-      result = getAnalyzeContext(transactions, profile);
-      break;
-
-    case "BUDGET_PLAN":
-      result = getBudgetContext(profile);
-      break;
-
-    case "INVESTMENT_TIPS":
-      result = getInvestmentContext(profile);
-      break;
-
-    case "HUMAN_AGENT":
-      result = getHumanAgentContext(profile);
-      break;
-
-    default:
-      result = getBudgetContext(profile);
-      break;
-  }
-
-  result.userName = profile.user.name;
-  result.intent = intent;
-
-  return result;
+  return getOutOfScopeContext(profile);
 }
 
 module.exports = {

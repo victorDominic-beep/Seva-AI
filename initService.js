@@ -15,8 +15,6 @@ const { createSessionToken } = require("./jwtService");
 const { fetchUserData } = require("./retriever");
 const {
   storeSession,
-  getSession,
-  refreshSessionTTL,
 } = require("./redisService");
 
 // In-memory session store
@@ -58,19 +56,13 @@ async function initializeSession(userId, res) {
     const cookieName =
       process.env.SESSION_COOKIE_NAME || "seva_session";
 
-    const sessionTTLMs =
-      (parseInt(process.env.SESSION_TTL_HOURS) || 2) *
-      60 *
-      60 *
-      1000;
-
     res.cookie(cookieName, sessionToken, {
       httpOnly: true,
       secure:
         process.env.NODE_ENV === "production",
       sameSite:
         process.env.COOKIE_SAMESITE || "Strict",
-      maxAge: sessionTTLMs,
+      maxAge: 2 * 60 * 60 * 1000,
     });
 
     console.log(
@@ -170,23 +162,6 @@ async function validateSession(req) {
       error: "SESSION_EXPIRED",
     };
   }
-
-  const { sessionId } =
-    result.payload;
-
-  const storedSession =
-    await getSession(sessionId).catch(() => null);
-
-  if (!storedSession) {
-    return {
-      valid: false,
-      error: "SESSION_NOT_FOUND",
-    };
-  }
-
-  await refreshSessionTTL(
-    sessionId
-  ).catch(() => {});
 
   return {
     valid: true,

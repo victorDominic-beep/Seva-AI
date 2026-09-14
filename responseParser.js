@@ -26,22 +26,16 @@ function extractSections(cleanText) {
   return sections;
 }
 
-function formatForDisplay(text) {
-  return String(text || "")
-    .replace(/\*\*(.+?)\*\*/gs, "$1")
-    .replace(/__(.+?)__/gs, "$1");
-}
-
 function parseResponse(rawLLMResponse, pdfSources = null) {
   const cleanText = rawLLMResponse.trim();
   const sections   = extractSections(cleanText);
 
   return {
     raw: rawLLMResponse,
-    insight: formatForDisplay(sections.insight),
-    meaning: formatForDisplay(sections.meaning),
-    action:  formatForDisplay(sections.action),
-    displayText: formatForDisplay(cleanText)
+    insight: sections.insight,
+    meaning: sections.meaning,
+    action:  sections.action,
+    displayText: cleanText
   };
 }
 

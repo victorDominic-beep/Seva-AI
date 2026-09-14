@@ -17,6 +17,43 @@ const SUGGESTED_PROMPTS = [
   { label: "Investment tips",            intent: "INVESTMENT_TIPS"  },
 ];
 
+function enrichFinancialContext(rawContext, context) {
+  try {
+    const profile = context.profile;
+    if (!profile) return rawContext;
+
+    const balance = profile.user?.walletBalance || 0;
+    const income = profile.user?.monthlyIncome || 0;
+    const savings = profile.user?.savingsBalance || 0;
+    const incomeDay = profile.user?.incomeDay || 15;
+
+    const today = new Date();
+    const currentDay = today.getDate();
+    const daysUntilSalary = incomeDay > currentDay
+      ? incomeDay - currentDay
+      : (30 - currentDay + incomeDay);
+
+    const dailyBurnRate = balance > 0 && daysUntilSalary > 0
+      ? Math.round(balance / daysUntilSalary)
+      : 0;
+
+    const savingsRate = income > 0
+      ? Math.round((savings / income) * 100)
+      : 0;
+
+    const enrichment = `
+CALCULATED METRICS (use these in your response):
+- Days until next salary: ${daysUntilSalary} days
+- Safe daily spend to reach salary: NGN${dailyBurnRate.toLocaleString("en-NG")}
+- Savings rate: ${savingsRate}% of monthly income
+- Wallet balance: NGN${balance.toLocaleString("en-NG")}
+`;
+    return rawContext + enrichment;
+  } catch {
+    return rawContext;
+  }
+}
+
 // ── Build conversation messages for Groq ──────────────────────────
 function buildConversationMessages(systemPrompt, financialContext, conversationHistory, currentMessage) {
   const systemWithContext = `${systemPrompt}
@@ -55,6 +92,8 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
   // Step 1: Retrieve financial context
   const context = await retrieve(userQuery, userId);
   console.log(`🔍 Intent: ${context.intent}`);
+
+  const enrichedContext = enrichFinancialContext(context.context, context);
 
   // Step 2: Handle HUMAN_AGENT separately — no Groq call needed
   if (context.intent === "HUMAN_AGENT") {
@@ -102,7 +141,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     
     const messages = buildConversationMessages(
       systemPrompt,
-      context.context,
+      enrichedContext,
       conversationHistory,
       userMessage
     );
@@ -110,8 +149,8 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
     console.log("🤖 Calling Groq with PDF fallback context...");
     const response = await client.chat.completions.create({
       model:       "openai/gpt-oss-120b",
-      max_tokens:  900,
-      temperature: 0.7,
+      max_tokens:  1200,
+      temperature: 0.85,
       messages,
     });
 
@@ -150,7 +189,7 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
   // Step 4: Build full conversation messages for Groq
   const messages = buildConversationMessages(
     systemPrompt,
-    context.context,
+    enrichedContext,
     conversationHistory,
     userMessage
   );
@@ -159,8 +198,8 @@ async function runSevaPipeline(userQuery, userId, conversationHistory = []) {
   console.log("🤖 Calling Groq with conversation history...");
   const response = await client.chat.completions.create({
     model:       "openai/gpt-oss-120b",
-    max_tokens:  900,
-    temperature: 0.7,
+    max_tokens:  1200,
+    temperature: 0.85,
     messages,
   });
 

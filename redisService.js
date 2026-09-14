@@ -13,27 +13,41 @@ const Redis = require("ioredis");
 // Add these to your .env file
 // ═══════════════════════════════════════════════════════════════
 let redisClient = null;
+let isRedisAvailable = true;
+
+function warnRedisUnavailable() {
+  if (isRedisAvailable) {
+    isRedisAvailable = false;
+    console.warn("[Redis] Redis unavailable. Continuing without Redis.");
+  }
+}
 
 function getRedisClient() {
+  if (!isRedisAvailable) return null;
   if (redisClient) return redisClient;
 
-  redisClient = new Redis({
-  host:     process.env.REDIS_HOST,
-  port:     parseInt(process.env.REDIS_PORT) || 6379,
-  username: process.env.REDIS_USERNAME || "default",
-  password: process.env.REDIS_PASSWORD,
-  tls:      process.env.REDIS_TLS === "true" ? {} : undefined,
-    retryStrategy: (times) => {
-      if (times > 3) return null; // stop retrying after 3 attempts
-      return Math.min(times * 200, 2000);
-    }
-  });
+  try {
+    redisClient = new Redis({
+      host: process.env.REDIS_HOST,
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      username: process.env.REDIS_USERNAME || "default",
+      password: process.env.REDIS_PASSWORD,
+      tls: process.env.REDIS_TLS === "true" ? {} : undefined,
+      retryStrategy: (times) => {
+        if (times > 3) return null;
+        return Math.min(times * 200, 2000);
+      },
+    });
 
-  redisClient.on("connect",  () => console.log("[Redis] Connected"));
-  redisClient.on("error",    (err) => console.error("[Redis] Error:", err.message));
-  redisClient.on("close",    () => console.log("[Redis] Connection closed"));
+    redisClient.on("connect", () => console.log("[Redis] Connected"));
+    redisClient.on("error", () => warnRedisUnavailable());
+    redisClient.on("close", () => warnRedisUnavailable());
 
-  return redisClient;
+    return redisClient;
+  } catch (err) {
+    warnRedisUnavailable();
+    return null;
+  }
 }
 
 
@@ -50,13 +64,21 @@ function buildRedisKey(userId) {
 //   - Back off exponentially to max 2s per attempt
 //   - Timeout after 10 seconds total
 async function pollRedisForUserData(userId) {
-  const redis      = getRedisClient();
-  const key        = buildRedisKey(userId);
-  const startTime  = Date.now();
-  const maxWait    = 10000; // 10 seconds total
-  const minDelay   = 200;   // start at 200ms
-  const maxDelay   = 2000;  // max 2s per attempt
-  let   attempt    = 0;
+  if (!isRedisAvailable || !redisClient) {
+    throw new Error("REDIS_UNAVAILABLE: Redis is not available");
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error("REDIS_UNAVAILABLE: Redis is not available");
+  }
+
+  const key = buildRedisKey(userId);
+  const startTime = Date.now();
+  const maxWait = 10000;
+  const minDelay = 200;
+  const maxDelay = 2000;
+  let attempt = 0;
 
   console.log(`[Redis] Polling for key: ${key}`);
 
@@ -74,13 +96,11 @@ async function pollRedisForUserData(userId) {
       }
     }
 
-    // Exponential backoff: 200ms → 400ms → 800ms → 1600ms → 2000ms max
     const delay = Math.min(minDelay * Math.pow(2, attempt - 1), maxDelay);
     console.log(`[Redis] Data not ready — attempt ${attempt}, retrying in ${delay}ms`);
     await sleep(delay);
   }
 
-  // Timed out — data not available within 10 seconds
   throw new Error("REDIS_TIMEOUT: User data not available after 10 seconds");
 }
 
@@ -98,8 +118,12 @@ function isDataFresh(userData, maxAgeMs = 3600000) { // default 1 hour
 // ── Get user data from Redis (with freshness check) ───────────────
 // Returns null if key doesn't exist or data is stale
 async function getUserDataFromRedis(userId) {
+  if (!isRedisAvailable || !redisClient) return null;
+
   const redis = getRedisClient();
-  const key   = buildRedisKey(userId);
+  if (!redis) return null;
+
+  const key = buildRedisKey(userId);
 
   try {
     const data = await redis.get(key);
@@ -107,7 +131,6 @@ async function getUserDataFromRedis(userId) {
 
     const parsed = JSON.parse(data);
 
-    // Check freshness
     if (!isDataFresh(parsed)) {
       console.log(`[Redis] Data for ${userId} is stale — needs refresh`);
       return null;
@@ -115,7 +138,6 @@ async function getUserDataFromRedis(userId) {
 
     return parsed;
   } catch (err) {
-    console.error(`[Redis] Error reading key ${key}:`, err.message);
     return null;
   }
 }
@@ -124,8 +146,12 @@ async function getUserDataFromRedis(userId) {
 // ── Store session server-side in Redis ────────────────────────────
 // Seva stores active sessions in Redis for server-side validation
 async function storeSession(sessionId, sessionData, ttlSeconds = 7200) {
+  if (!isRedisAvailable || !redisClient) return;
+
   const redis = getRedisClient();
-  const key   = `seva:session:${sessionId}`;
+  if (!redis) return;
+
+  const key = `seva:session:${sessionId}`;
 
   await redis.set(key, JSON.stringify(sessionData), "EX", ttlSeconds);
   console.log(`[Redis] Session stored: ${sessionId} (TTL: ${ttlSeconds}s)`);
@@ -134,8 +160,12 @@ async function storeSession(sessionId, sessionData, ttlSeconds = 7200) {
 
 // ── Get session from Redis ────────────────────────────────────────
 async function getSession(sessionId) {
+  if (!isRedisAvailable || !redisClient) return null;
+
   const redis = getRedisClient();
-  const key   = `seva:session:${sessionId}`;
+  if (!redis) return null;
+
+  const key = `seva:session:${sessionId}`;
 
   const data = await redis.get(key);
   if (!data) return null;
@@ -146,8 +176,12 @@ async function getSession(sessionId) {
 
 // ── Delete session from Redis (on logout) ─────────────────────────
 async function deleteSession(sessionId) {
+  if (!isRedisAvailable || !redisClient) return;
+
   const redis = getRedisClient();
-  const key   = `seva:session:${sessionId}`;
+  if (!redis) return;
+
+  const key = `seva:session:${sessionId}`;
   await redis.del(key);
   console.log(`[Redis] Session deleted: ${sessionId}`);
 }
@@ -156,8 +190,12 @@ async function deleteSession(sessionId) {
 // ── Slide session TTL on active request ───────────────────────────
 // Spec section 7.3 — reset TTL on each active request
 async function refreshSessionTTL(sessionId, ttlSeconds = 7200) {
+  if (!isRedisAvailable || !redisClient) return;
+
   const redis = getRedisClient();
-  const key   = `seva:session:${sessionId}`;
+  if (!redis) return;
+
+  const key = `seva:session:${sessionId}`;
   await redis.expire(key, ttlSeconds);
 }
 
@@ -176,7 +214,6 @@ async function disconnectRedis() {
   }
 }
 
-
 module.exports = {
   getRedisClient,
   pollRedisForUserData,
@@ -186,4 +223,5 @@ module.exports = {
   deleteSession,
   refreshSessionTTL,
   disconnectRedis,
+  isRedisAvailable,
 };

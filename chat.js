@@ -25,81 +25,81 @@ const {
 } = require("./agentService");
         const { addReply, getReplies } = require("./agentReplyStore");
 
-   async function sendToCRMWebhook(
-  userId,
-  userMessage,
-  sevaResponse,
-  conversationHistory,
-  userName,
-  userEmail,
-  userPhone
-) {
-  const webhookUrl = process.env.CRM_WEBHOOK_URL;
-
-  if (!webhookUrl) {
-    console.warn("[CRM] CRM_WEBHOOK_URL is not configured.");
-    return;
-  }
-
-  const payload = {
-    event: "escalation",
-
-    customer_id: userId,
-
-    customer_name: userName || "User",
-    customer_email: userEmail || "",
-    customer_phone: userPhone || "",
-
-    session_id: userId,
-
-    category: sevaResponse.intent || "General",
-
-    priority: "high",
-
-    ai_confidence: 38,
-
-    subject: `${sevaResponse.intent || "Support"} Request`,
-
-    ai_summary:
-      sevaResponse.insight ||
-      sevaResponse.displayText ||
-      "",
-
-    suggested_queue: "Customer Support",
-
-    platform: "web",
-
-    chat_history: (conversationHistory || []).slice(-10).map(msg => ({
-      role: msg.role,
-      content: msg.content,
-    })),
-  };
-        
-
-  try { 
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.CHATBOT_API_KEY,
-        "Content-Type": "application/json",    
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const body = await response.text();
-
-    console.log("[CRM] Status:", response.status);
-    console.log("[CRM] Response:", body);
-
-    if (!response.ok) {
-      console.error("[CRM] Webhook rejected.");
-    } else {
-      console.log("[CRM] Webhook sent successfully.");
-    }
-  } catch (err) {
-    console.error("[CRM] Webhook error:", err.message);
-  }
-}
+// CRM webhook integration is paused.
+// async function sendToCRMWebhook(
+//   userId,
+//   userMessage,
+//   sevaResponse,
+//   conversationHistory,
+//   userName,
+//   userEmail,
+//   userPhone
+// ) {
+//   const webhookUrl = process.env.CRM_WEBHOOK_URL;
+//
+//   if (!webhookUrl) {
+//     console.warn("[CRM] CRM_WEBHOOK_URL is not configured.");
+//     return;
+//   }
+//
+//   const payload = {
+//     event: "escalation",
+//
+//     customer_id: userId,
+//
+//     customer_name: userName || "User",
+//     customer_email: userEmail || "",
+//     customer_phone: userPhone || "",
+//
+//     session_id: userId,
+//
+//     category: sevaResponse.intent || "General",
+//
+//     priority: "high",
+//
+//     ai_confidence: 38,
+//
+//     subject: `${sevaResponse.intent || "Support"} Request`,
+//
+//     ai_summary:
+//       sevaResponse.insight ||
+//       sevaResponse.displayText ||
+//       "",
+//
+//     suggested_queue: "Customer Support",
+//
+//     platform: "web",
+//
+//     chat_history: (conversationHistory || []).slice(-10).map(msg => ({
+//       role: msg.role,
+//       content: msg.content,
+//     })),
+//   };
+//
+//   try {
+//     const response = await fetch(webhookUrl, {
+//       method: "POST",
+//       headers: {
+//         "x-api-key": process.env.CHATBOT_API_KEY,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify(payload),
+//     });
+//
+//     const body = await response.text();
+//
+//     console.log("[CRM] Status:", response.status);
+//     console.log("[CRM] Response:", body);
+//
+//     if (!response.ok) {
+//       console.error("[CRM] Webhook rejected.");
+//     } else {
+//       console.log("[CRM] Webhook sent successfully.");
+//     }
+//   } catch (err) {
+//     console.error("[CRM] Webhook error:", err.message);
+//   }
+// }
 
 
 // ── POST /api/chat/init ───────────────────────────────────────────
@@ -141,10 +141,14 @@ router.post("/", async (req, res) => {
 
   const session = await validateSession(req);
   if (!session.valid) {
+    const messageByCode = {
+      NO_SESSION_COOKIE: "No active session. Please open the chat panel first.",
+      SESSION_NOT_FOUND: "Session expired. Please log in again.",
+      SESSION_EXPIRED: "Session expired. Please log in again.",
+    };
+
     return res.status(401).json({
-      error: session.error === "NO_SESSION_COOKIE"
-        ? "No active session. Please open the chat panel first."
-        : "Session expired. Please log in again.",
+      error: messageByCode[session.error] || "Session expired. Please log in again.",
       code: session.error,
     });
   }
@@ -170,15 +174,6 @@ router.post("/", async (req, res) => {
 
     const query  = isGreeting ? null : message.trim();
     const result = await runSevaPipeline(query, activeUserId, conversationHistory);
-    if (!isGreeting) sendToCRMWebhook(activeUserId,
-       message, 
-       result, 
-       conversationHistory, 
-        result.userName, 
-         result.userEmail,
-             result.userPhone
-
-);
 
     if (result.intent === "HUMAN_AGENT" && result.isHandoff) {
       setHandoffState(activeUserId, "pending");
